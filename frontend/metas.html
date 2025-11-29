@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Metas Financeiras - Zero Dívida</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Zero Dívida</h1>
+    <p class="subtitle">Controle suas metas financeiras</p>
+  </header>
+
+  <main class="container">
+    <!-- Card de Nova Meta -->
+    <section class="card">
+      <h2>Nova Meta Financeira</h2>
+      <form id="meta-form" class="form">
+        <div class="field">
+          <label for="meta-titulo">Título da Meta</label>
+          <input id="meta-titulo" type="text" placeholder="Ex.: Reserva de emergência" required>
+        </div>
+        <div class="field">
+          <label for="meta-valor">Valor Desejado (R$)</label>
+          <input id="meta-valor" type="number" step="0.01" min="0" placeholder="Ex.: 5000.00" required>
+        </div>
+        <div class="field">
+          <label for="meta-atual">Valor Atual (R$)</label>
+          <input id="meta-atual" type="number" step="0.01" min="0" placeholder="Ex.: 1500.00" required>
+        </div>
+        <div class="field">
+          <label for="meta-data">Data Limite</label>
+          <input id="meta-data" type="date" required>
+        </div>
+        <button class="btn primary" type="submit">Adicionar Meta</button>
+      </form>
+    </section>
+
+    <!-- Card de Metas Existentes -->
+    <section class="card">
+      <h2>Minhas Metas</h2>
+      <div class="kpis">
+        <div class="kpi">
+          <span class="kpi-label">Metas Ativas</span>
+          <span id="kpi-metas-ativas" class="kpi-value">0</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">Total em Metas</span>
+          <span id="kpi-total-metas" class="kpi-value">R$ 0,00</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">Total Arrecadado</span>
+          <span id="kpi-total-arrecadado" class="kpi-value">R$ 0,00</span>
+        </div>
+      </div>
+
+      <ul id="metas-list" class="list">
+        <li>Nenhuma meta cadastrada ainda.</li>
+      </ul>
+    </section>
+
+    <!-- Card de Progresso -->
+    <section class="card grid-2">
+      <div>
+        <h2>Progresso das Metas</h2>
+        <div class="status">
+          <span class="status-label">Meta mais próxima:</span>
+          <span id="meta-proxima" class="badge">-</span>
+        </div>
+        
+        <h3>Próximas a vencer</h3>
+        <ul id="metas-vencimento" class="list compact"></ul>
+      </div>
+
+      <div>
+        <h2>Distribuição de Metas</h2>
+        <canvas id="metasChart" height="220"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Zero Dívida &copy; 2023 - <a href="dashboard.html">Voltar ao Dashboard</a></p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // Verificar autenticação
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      location.href = "index.html";
+    }
+
+    // Elementos da UI
+    const metaForm = document.getElementById("meta-form");
+    const metasList = document.getElementById("metas-list");
+    const metasVencimento = document.getElementById("metas-vencimento");
+    let metasChart = null;
+
+    // Carregar metas ao iniciar
+    document.addEventListener("DOMContentLoaded", async () => {
+      await carregarMetas();
+    });
+
+    // Adicionar nova meta
+    metaForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      
+      const titulo = document.getElementById("meta-titulo").value;
+      const valorMeta = parseFloat(document.getElementById("meta-valor").value);
+      const valorAtual = parseFloat(document.getElementById("meta-atual").value);
+      const dataLimite = document.getElementById("meta-data").value;
+
+      if (!titulo || !valorMeta || !dataLimite) {
+        alert("Preencha todos os campos obrigatórios.");
+        return;
+      }
+
+      try {
+        const res = await fetch("http://localhost:3000/api/metas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            userId, 
+            titulo, 
+            valorMeta, 
+            valorAtual, 
+            dataLimite 
+          })
+        });
+
+        if (res.ok) {
+          alert("Meta adicionada com sucesso!");
+          metaForm.reset();
+          await carregarMetas();
+        } else {
+          alert("Erro ao adicionar meta.");
+        }
+      } catch (error) {
+        console.error("Erro:", error);
+        alert("Erro de conexão com o servidor.");
+      }
+    });
+
+    // Carregar metas do usuário
+    async function carregarMetas() {
+      try {
+        const res = await fetch(`http://localhost:3000/api/metas?userId=${userId}`);
+        const metas = await res.json();
+        
+        renderizarMetas(metas);
+        atualizarKPIs(metas);
+        renderizarGrafico(metas);
+      } catch (error) {
+        console.error("Erro ao carregar metas:", error);
+      }
+    }
+
+    // Renderizar lista de metas
+    function renderizarMetas(metas = []) {
+  if (metas.length === 0) {
+    metasList.innerHTML = "<li>Nenhuma meta cadastrada ainda.</li>";
+    metasVencimento.innerHTML = "<li>Nenhuma meta próxima do vencimento.</li>";
+    return;
+  }
+
+  metasList.innerHTML = "";
+  metasVencimento.innerHTML = "";
+
+  // Ordenar por data limite
+  metas.sort((a, b) => new Date(a.dataLimite) - new Date(b.dataLimite));
+
+  for (const meta of metas) {
+    // CONVERTER VALORES PARA NÚMERO
+    const valorMeta = Number(meta.valorMeta);
+    const valorAtual = Number(meta.valorAtual);
+    const progresso = valorMeta > 0 ? (valorAtual / valorMeta) * 100 : 0;
+    
+    const diasRestantes = Math.ceil((new Date(meta.dataLimite) - new Date()) / (1000 * 60 * 60 * 24));
+    
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <div style="flex: 1;">
+        <strong>${meta.titulo}</strong>
+        <div style="background: #f0f0f0; border-radius: 8px; height: 8px; margin: 8px 0;">
+          <div style="background: var(--primary); width: ${progresso}%; height: 100%; border-radius: 8px;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+          <span>${progresso.toFixed(0)}% concluído</span>
+          <span>${diasRestantes} dias restantes</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+          <span>${brl(valorAtual)} de ${brl(valorMeta)}</span>
+          <span class="row-actions">
+            <button class="icon-btn" title="Adicionar valor" onclick="adicionarValor(${meta.id})">➕</button>
+            <button class="icon-btn" title="Excluir" onclick="excluirMeta(${meta.id})">🗑️</button>
+          </span>
+        </div>
+      </div>
+    `;
+    metasList.appendChild(li);
+
+    // Adicionar às metas próximas do vencimento (menos de 30 dias)
+    if (diasRestantes <= 30 && diasRestantes >= 0) {
+      const liVencimento = document.createElement("li");
+      liVencimento.innerHTML = `
+        <span>${meta.titulo}</span>
+        <span><strong>${diasRestantes} dias</strong></span>
+      `;
+      metasVencimento.appendChild(liVencimento);
+    }
+  }
+
+  // Atualizar meta mais próxima
+  if (metas.length > 0) {
+    const metaProxima = metas[0];
+    const dias = Math.ceil((new Date(metaProxima.dataLimite) - new Date()) / (1000 * 60 * 60 * 24));
+    document.getElementById("meta-proxima").textContent = `${metaProxima.titulo} (${dias} dias)`;
+  }
+}
+
+    // Atualizar KPIs
+function atualizarKPIs(metas) {
+  // Converter todos os valores para número para evitar NaN
+  const totalMetas = metas.reduce((sum, meta) => sum + Number(meta.valorMeta), 0);
+  const totalArrecadado = metas.reduce((sum, meta) => sum + Number(meta.valorAtual), 0);
+  const metasAtivas = metas.length;
+
+  document.getElementById("kpi-metas-ativas").textContent = metasAtivas;
+  document.getElementById("kpi-total-metas").textContent = brl(totalMetas);
+  document.getElementById("kpi-total-arrecadado").textContent = brl(totalArrecadado);
+}
+
+    // Renderizar gráfico
+    function renderizarGrafico(metas) {
+      const ctx = document.getElementById("metasChart").getContext("2d");
+      
+      if (metasChart) {
+        metasChart.destroy();
+      }
+
+      if (metas.length === 0) {
+        return;
+      }
+
+      const labels = metas.map(meta => meta.titulo);
+      const valores = metas.map(meta => meta.valorAtual);
+      const cores = ["#8da2fb", "#ffd6a5", "#caffbf", "#bdb2ff", "#ffadad"];
+
+      metasChart = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+          labels: labels,
+          datasets: [{
+            data: valores,
+            backgroundColor: cores,
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: "bottom"
+            },
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const meta = metas[context.dataIndex];
+                  const percentual = (meta.valorAtual / meta.valorMeta) * 100;
+                  return `${meta.titulo}: ${brl(meta.valorAtual)} (${percentual.toFixed(1)}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Funções auxiliares
+    
+        function brl(valor) {
+            // Garantir que o valor é um número
+            const numero = Number(valor) || 0;
+            return new Intl.NumberFormat("pt-BR", { 
+                style: "currency", 
+                    currency: "BRL" 
+            }).format(numero);
+        }
+
+async function adicionarValor(metaId) {
+  const valor = prompt("Quanto deseja adicionar?");
+  if (valor && !isNaN(valor) && parseFloat(valor) > 0) {
+    try {
+      const res = await fetch(`http://localhost:3000/api/metas/${metaId}/adicionar`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          userId: localStorage.getItem("userId"),
+          valor: parseFloat(valor)
+        })
+      });
+
+      if (res.ok) {
+        alert("Valor adicionado com sucesso!");
+        await carregarMetas();
+      } else {
+        alert("Erro ao adicionar valor.");
+      }
+    } catch (error) {
+      console.error("Erro:", error);
+      alert("Erro de conexão com o servidor.");
+    }
+  }
+}
+
+async function excluirMeta(metaId) {
+  if (confirm("Tem certeza que deseja excluir esta meta?")) {
+    try {
+      const res = await fetch(`http://localhost:3000/api/metas/${metaId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          userId: localStorage.getItem("userId")
+        })
+      });
+
+      if (res.ok) {
+        alert("Meta excluída com sucesso!");
+        await carregarMetas();
+      } else {
+        alert("Erro ao excluir meta.");
+      }
+    } catch (error) {
+      console.error("Erro:", error);
+      alert("Erro de conexão com o servidor.");
+    }
+  }
+}
+  </script>
+</body>
+</html>

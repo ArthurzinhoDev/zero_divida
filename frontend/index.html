@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - Zero Dívida</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div class="container">
+  <section class="card">
+    <h1>Zero Dívida</h1>
+    <h2>Login</h2>
+    <form id="login-form">
+      <div class="field">
+        <label>CPF ou Email</label>
+        <input type="text" id="login-cpf-email" required>
+      </div>
+      <div class="field">
+        <label>Senha</label>
+        <input type="password" id="login-password" required>
+      </div>
+      <button type="submit" class="btn primary">Entrar</button>
+      <p>Não tem conta? <a href="register.html">Cadastre-se</a></p>
+    </form>
+  </section>
+</div>
+<script>
+document.getElementById('login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const login = document.getElementById('login-cpf-email').value;
+  const password = document.getElementById('login-password').value;
+  const res = await fetch('http://localhost:3000/api/login', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({login, password})
+  });
+  const data = await res.json();
+  if(data.success) localStorage.setItem('userId', data.userId), location.href='dashboard.html';
+  else alert(data.error);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zero Dívida</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <h1>Zero Dívida</h1>
+    <p class="subtitle">Controle simples, visual e inteligente das suas finanças</p>
+    
+    <div class="user-profile-widget" style="padding-left: 15px;">
+        <div class="profile-info">
+            <span id="profile-username" class="profile-name">Carregando...</span>
+            <span id="profile-email" class="profile-email"></span>
+        </div>
+        <button id="logout-btn" class="btn danger small" style="margin-left: 10px;">Sair</button>
+    </div>
+
+    <nav style="margin-top: 15px; text-align: center;">
+      <a href="metas.html" class="btn primary" style="
+          font-size: 1.1rem; 
+          padding: 14px 24px; 
+          box-shadow: 0 8px 16px rgba(141, 162, 251, 0.4); 
+          text-decoration: none;
+      ">
+          🎯 <strong>Metas Financeiras</strong>
+      </a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card grid-2">
+      <div>
+        <h2>Renda mensal</h2>
+        <form id="income-form" class="form">
+          <div class="field">
+            <label for="income-amount">Valor da renda</label>
+            <input id="income-amount" type="number" step="0.01" min="0" placeholder="Ex.: 3500.00" required />
+          </div>
+          <div class="field">
+            <label for="income-month">Mês</label>
+            <input id="income-month" type="month" required />
+          </div>
+          <button class="btn primary" type="submit">Adicionar renda</button>
+        </form>
+        <ul id="income-list" class="list"></ul>
+      </div>
+
+      <div>
+        <h2>Despesas</h2>
+        <form id="expense-form" class="form">
+          <div class="field">
+            <label for="expense-title">Descrição</label>
+            <input id="expense-title" type="text" placeholder="Ex.: Mercado" required />
+          </div>
+          <div class="field">
+            <label for="expense-amount">Valor</label>
+            <input id="expense-amount" type="number" step="0.01" min="0" placeholder="Ex.: 420.50" required />
+          </div>
+          <div class="field">
+            <label for="expense-category">Categoria</label>
+            <select id="expense-category" required>
+              <option>Moradia</option>
+              <option>Alimentação</option>
+              <option>Transporte</option>
+              <option>Lazer</option>
+              <option>Saúde</option>
+              <option>Educação</option>
+              <option>Dívidas</option>
+              <option>Outros</option>
+            </select>
+          </div>
+          <div class="field checkbox">
+            <label>
+              <input id="expense-essential" type="checkbox" />
+              Essencial
+            </label>
+          </div>
+          <div class="field">
+            <label for="expense-month">Mês</label>
+            <input id="expense-month" type="month" required />
+          </div>
+          <button class="btn accent" type="submit">Adicionar despesa</button>
+        </form>
+        <ul id="expense-list" class="list"></ul>
+      </div>
+    </section>
+
+    <section class="card grid-2">
+      <div>
+        <h2>Balanço do mês</h2>
+        <div class="kpis">
+          <div class="kpi">
+            <span class="kpi-label">Renda</span>
+            <span id="kpi-income" class="kpi-value">R$ 0,00</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Despesas</span>
+            <span id="kpi-expenses" class="kpi-value">R$ 0,00</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Saldo</span>
+            <span id="kpi-balance" class="kpi-value">R$ 0,00</span>
+          </div>
+        </div>
+
+        <div class="status">
+          <span class="status-label">Classificação:</span>
+          <span id="status-badge" class="badge">-</span>
+        </div>
+
+        <h3>Gastos desnecessários</h3>
+        <ul id="unnecessary-list" class="list compact"></ul>
+      </div>
+
+      <div>
+        <h2>Distribuição de despesas</h2>
+        <div style="max-width: 300px; margin: 0 auto;">
+            <canvas id="consumoChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Dicas Financeiras</h2>
+      <ul id="tips-list" class="list compact"></ul>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Zero Dívida &copy; 2025</p>
+  </footer>
+
+  <script>
+    // --- Configuração Inicial ---
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      window.location.href = "index.html";
+    }
+
+    // Elementos UI
+    const incomeMonthEl = document.getElementById("income-month");
+    const expenseMonthEl = document.getElementById("expense-month");
+    let pieChart = null;
+
+    // --- Helpers ---
+    function brl(n) {
+      return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n || 0);
+    }
+
+    function getCurrentMonth() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    }
+
+    // --- Lógica Principal: Refresh ---
+    async function refresh() {
+      // Pega o mês selecionado no input de despesas (usado como referência global)
+      const activeMonth = expenseMonthEl.value || getCurrentMonth();
+      
+      console.log(`🔄 Atualizando Dashboard para o mês: ${activeMonth}`);
+
+      // Sincroniza os inputs de mês
+      if(incomeMonthEl.value !== activeMonth) incomeMonthEl.value = activeMonth;
+      if(expenseMonthEl.value !== activeMonth) expenseMonthEl.value = activeMonth;
+
+      try {
+        // Busca Incomes e Expenses em paralelo
+        const [resIncomes, resExpenses] = await Promise.all([
+          fetch(`http://localhost:3000/api/incomes?userId=${userId}&month=${activeMonth}`),
+          fetch(`http://localhost:3000/api/expenses?userId=${userId}&month=${activeMonth}`)
+        ]);
+
+        const incomes = await resIncomes.json();
+        const expenses = await resExpenses.json();
+
+        // LOG DE DEBUG: Veja isso no Console do navegador (F12)
+        console.log("📥 Dados Recebidos:", { incomes, expenses });
+
+        // Calcula Totais (Garante que é número com parseFloat)
+        const totalIncome = incomes.reduce((acc, item) => acc + parseFloat(item.amount), 0);
+        const totalExpenses = expenses.reduce((acc, item) => acc + parseFloat(item.amount), 0);
+
+        console.log("💰 Totais Calculados:", { totalIncome, totalExpenses });
+
+        // Atualiza a tela
+        renderKpis(totalIncome, totalExpenses);
+        renderLists(incomes, expenses);
+        renderChart(expenses);
+        renderStatus(totalIncome, totalExpenses);
+
+      } catch (error) {
+        console.error("❌ Erro no refresh:", error);
+      }
+    }
+
+    // --- Renderização ---
+    function renderKpis(income, expense) {
+      const balance = income - expense;
+      document.getElementById("kpi-income").textContent = brl(income);
+      document.getElementById("kpi-expenses").textContent = brl(expense);
+      
+      const balanceEl = document.getElementById("kpi-balance");
+      balanceEl.textContent = brl(balance);
+      balanceEl.style.color = balance >= 0 ? "var(--ok)" : "var(--danger)";
+    }
+
+    function renderLists(incomes, expenses) {
+      const incomeList = document.getElementById("income-list");
+      const expenseList = document.getElementById("expense-list");
+      const unnecessaryList = document.getElementById("unnecessary-list");
+
+      // Render Incomes
+      incomeList.innerHTML = incomes.map(i => `
+        <li>
+          <span>Renda</span>
+          <strong>${brl(i.amount)}</strong>
+          <button onclick="deleteItem('incomes', ${i.id})">🗑️</button>
+        </li>
+      `).join('') || '<li>Sem renda registrada.</li>';
+
+      // Render Expenses
+      expenseList.innerHTML = expenses.map(e => `
+        <li>
+          <div>
+            <strong>${e.title}</strong><br>
+            <small>${e.category} | ${e.essential ? 'Essencial' : 'Supérfluo'}</small>
+          </div>
+          <div style="text-align:right">
+            <strong>${brl(e.amount)}</strong>
+            <button onclick="deleteItem('expenses', ${e.id})">🗑️</button>
+          </div>
+        </li>
+      `).join('') || '<li>Sem despesas registradas.</li>';
+
+      // Render Unnecessary
+      const unnec = expenses.filter(e => !e.essential);
+      unnecessaryList.innerHTML = unnec.map(e => `<li><span>${e.title}</span> <strong>${brl(e.amount)}</strong></li>`).join('') || '<li>Nenhum gasto supérfluo.</li>';
+    }
+
+    function renderStatus(income, expense) {
+        const badge = document.getElementById("status-badge");
+        const tips = document.getElementById("tips-list");
+        
+        if(income === 0) {
+            badge.textContent = "Sem Renda";
+            badge.className = "badge";
+            tips.innerHTML = "<li>Cadastre sua renda mensal para começar.</li>";
+            return;
+        }
+
+        const ratio = (expense / income) * 100;
+        let status = "", cls = "", tip = "";
+
+        if(ratio > 100) { status = "Endividado"; cls = "excess"; tip = "🚨 Corte gastos imediatamente!"; }
+        else if(ratio > 90) { status = "Perigo"; cls = "high"; tip = "⚠️ Cuidado, você está no limite."; }
+        else if(ratio > 70) { status = "Moderado"; cls = "moderate"; tip = "👍 Bom, mas pode melhorar."; }
+        else { status = "Saudável"; cls = "good"; tip = "✅ Parabéns! Continue investindo."; }
+
+        badge.textContent = status;
+        badge.className = `badge ${cls}`;
+        tips.innerHTML = `<li>${tip}</li>`;
+    }
+
+    function renderChart(expenses) {
+      const ctx = document.getElementById("consumoChart").getContext("2d");
+      
+      // Agrupa por categoria
+      const categories = {};
+      expenses.forEach(e => {
+        categories[e.category] = (categories[e.category] || 0) + parseFloat(e.amount);
+      });
+
+      const labels = Object.keys(categories);
+      const data = Object.values(categories);
+
+      if (pieChart) pieChart.destroy();
+
+      if (labels.length === 0) return;
+
+      pieChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: data,
+            backgroundColor: ["#8da2fb", "#ffd6a5", "#caffbf", "#ffadad", "#bdb2ff", "#ffef9f"],
+            borderWidth: 0
+          }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+      });
+    }
+
+    // --- Ações ---
+    async function deleteItem(type, id) {
+      if(!confirm("Deletar item?")) return;
+      await fetch(`http://localhost:3000/api/${type}/${id}`, { method: 'DELETE' });
+      refresh();
+    }
+
+    document.getElementById("income-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const amount = document.getElementById("income-amount").value;
+      const month = document.getElementById("income-month").value;
+      
+      await fetch("http://localhost:3000/api/incomes", {
+        method: "POST",
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ userId, amount, month })
+      });
+      document.getElementById("income-amount").value = "";
+      refresh();
+    });
+
+    document.getElementById("expense-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const title = document.getElementById("expense-title").value;
+      const amount = document.getElementById("expense-amount").value;
+      const category = document.getElementById("expense-category").value;
+      const essential = document.getElementById("expense-essential").checked;
+      const month = document.getElementById("expense-month").value;
+
+      await fetch("http://localhost:3000/api/expenses", {
+        method: "POST",
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ userId, title, amount, category, essential, month })
+      });
+      
+      document.getElementById("expense-title").value = "";
+      document.getElementById("expense-amount").value = "";
+      refresh();
+    });
+
+    // Logout Logic
+    document.getElementById("logout-btn").addEventListener("click", () => {
+        localStorage.removeItem("userId");
+        window.location.href = "index.html";
+    });
+
+    // Carregar Perfil (Apenas nome e email)
+    fetch(`http://localhost:3000/api/user/${userId}`)
+        .then(r => r.json())
+        .then(user => {
+            document.getElementById("profile-username").textContent = user.name;
+            document.getElementById("profile-email").textContent = user.email;
+        })
+        .catch(e => console.error("Erro perfil", e));
+
+    // --- Inicialização ---
+    const now = getCurrentMonth();
+    incomeMonthEl.value = now;
+    expenseMonthEl.value = now;
+    
+    // Listeners de mudança de mês
+    incomeMonthEl.addEventListener("change", refresh);
+    expenseMonthEl.addEventListener("change", refresh);
+
+    // Carrega tudo
+    refresh();
+
+  </script>
+</body>
+</html>
